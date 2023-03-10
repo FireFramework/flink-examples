@@ -212,12 +212,6 @@
             <artifactId>fire-common_${scala.binary.version}</artifactId>
             <version>${fire.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.ververica</groupId>
-            <artifactId>flink-connector-mysql-cdc</artifactId>
-            <version>2.2-SNAPSHOT</version>
-            <!--            <version>2.2.1</version>-->
-        </dependency>
 
         <dependency>
             <groupId>com.zto.fire</groupId>
