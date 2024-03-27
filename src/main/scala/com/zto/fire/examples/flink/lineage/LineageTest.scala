@@ -19,26 +19,27 @@ package com.zto.fire.examples.flink.lineage
 
 import com.zto.fire._
 import com.zto.fire.common.anno.Config
-import com.zto.fire.common.enu.Datasource
-import com.zto.fire.common.util.{DatasourceDesc, DateFormatUtils, JSONUtils, ThreadUtils}
-import com.zto.fire.core.anno.connector._
-import com.zto.fire.core.anno.lifecycle.{Process, Step1}
+import com.zto.fire.common.enu.{Datasource, Operation}
+import com.zto.fire.common.lineage.LineageManager
+import com.zto.fire.common.util.DateFormatUtils
+import com.zto.fire.core.anno.connector.{HBase, Jdbc, Jdbc5, Kafka, Kafka5, RocketMQ, RocketMQ5}
+import com.zto.fire.core.anno.lifecycle.Process
 import com.zto.fire.examples.bean.Student
 import com.zto.fire.flink.FlinkStreaming
 import com.zto.fire.flink.anno.Streaming
-import com.zto.fire.flink.sync.FlinkLineageAccumulatorManager
 import com.zto.fire.hbase.HBaseConnector
-import com.zto.fire.predef.{JConcurrentHashMap, JHashSet}
+import com.zto.fire.{BlackholeDatasource, println}
 import org.apache.flink.api.scala._
 
-import java.util.concurrent.TimeUnit
-
-@HBase("test")
+@HBase("fat")
 @Config("""fire.lineage.run.initialDelay=10""")
 @Streaming(interval = 60, unaligned = true, parallelism = 2) // 100s做一次checkpoint，开启非对齐checkpoint
 @RocketMQ(brokers = "bigdata_test", topics = "fire", groupId = "fire")
+@RocketMQ5(brokers = "bigdata_test", topics = "fire5", groupId = "fire5")
 @Kafka(brokers = "bigdata_test", topics = "fire", groupId = "fire")
-@Jdbc(url = "jdbc:mysql://mysql-server:3306/fire", username = "root", password = "root")
+@Kafka5(brokers = "bigdata_test", topics = "fire5", groupId = "fire5")
+@Jdbc(url = "jdbc:mysql://mysql-server:3306/fire?useSSL=true", username = "root", password = "root")
+@Jdbc5(url = "jdbc:mysql://mysql-server:3306/fire?useSSL=true", username = "root5", password = "root")
 object LineageTest extends FlinkStreaming {
   private val hbaseTable = "fire_test_1"
   private lazy val tableName = "spark_test"
@@ -51,9 +52,36 @@ object LineageTest extends FlinkStreaming {
       val timestamp = DateFormatUtils.formatCurrentDateTime()
       val insertSql = s"INSERT INTO $tableName (name, age, createTime, length, sex) VALUES (?, ?, ?, ?, ?)"
       this.fire.jdbcUpdate(insertSql, Seq("admin", 12, timestamp, 10.0, 1))
-      HBaseConnector.get[Student](hbaseTable, classOf[Student], Seq("1"))
+      HBaseConnector.get[Student](hbaseTable, Seq("1"))
       t
     }).print()
+
+    /*this.fire.fromSourceLineage(source, WatermarkStrategy.noWatermarks(), "kafka") {
+      LineageManager.addKafkaLineage(keyNum = 1, Operation.SOURCE)
+    }*/
+
+    // 方式一：
+    dstream.addSinkLineage(x => println("addSinkLineage.addBlackHoleLineage=>" + x)) {
+      LineageManager.addBlackHoleLineage
+    }
+
+    dstream.addSinkLineage(x => println("addSinkLineage.kafkaSink=>" + x)) {
+      LineageManager.addKafkaLineage(keyNum = 5, Operation.SINK)
+    }
+
+    dstream.addSinkLineage(x => println("addSinkLineage.rocketSink=>" + x)) {
+      LineageManager.addRocketMQLineage(keyNum = 5, Operation.SINK)
+    }
+
+    dstream.addSinkLineage(x => println("addSinkLineage.rocketSink=>" + x)) {
+      LineageManager.addTidbLineage("t_user", keyNum = 5, Operation.SINK)
+      // 多个数据源
+      LineageManager.addMySQLLineage2("jdbc:mysql://mysql-server:3306/fire?useSSL=true", "t_student", "fire", Operation.SELECT, Operation.DELETE, Operation.INSERT)
+    }
+
+    // 方式二：
+    dstream.addSinkLineage2(x => println("addSinkLineage2=>" + x))(new BlackholeDatasource(Datasource.PRINT.toString), Operation.SINK)
+    dstream.addSink(x => println("原生：" + x))
 
     sql("""
           |CREATE table source (
@@ -88,12 +116,5 @@ object LineageTest extends FlinkStreaming {
           |
           |insert into sink select * from source;
           |""".stripMargin)
-  }
-
-  @Step1("获取血缘信息")
-  def lineage: Unit = {
-    ThreadUtils.scheduleAtFixedRate({
-      println(s"累加器值：" + JSONUtils.toJSONString(FlinkLineageAccumulatorManager.getValue))
-    }, 0, 60, TimeUnit.SECONDS)
   }
 }

@@ -21,9 +21,9 @@ import scala.collection.mutable.ListBuffer
  * @create 2020-5-25 16:32:50
  */
 @Checkpoint(30)
-@HBase("test")
-@HBase2("test") // 对应keyNum=2的Hbase集群地址
-@HBase3("test") // 对应keyNum=3的Hbase集群地址
+@HBase("fat")
+@HBase2("fat") // 对应keyNum=2的Hbase集群地址
+@HBase3("fat") // 对应keyNum=3的Hbase集群地址
 @Kafka(brokers = "bigdata_test", topics = "fire", groupId = "fire")
 // 以上注解支持别名或url两种方式如：@Hive(thrift://hive:9083)，别名映射需配置到cluster.properties中
 object HBaseTest extends FlinkStreaming {
@@ -98,10 +98,10 @@ object HBaseTest extends FlinkStreaming {
   def testHBase: Unit = {
     // get操作
     val getList = ListBuffer(HBaseConnector.buildGet("1"))
-    val student = HBaseConnector.get(this.tableName, classOf[Student], getList, 1)
+    val student = HBaseConnector.get[Student](this.tableName, getList, 1)
     if (student != null) println(JSONUtils.toJSONString(student))
     // scan操作
-    val studentList = HBaseConnector.scan(this.tableName, classOf[Student], HBaseConnector.buildScan("0", "9"), 1)
+    val studentList = HBaseConnector.scan[Student](this.tableName, HBaseConnector.buildScan("0", "9"), 1)
     if (studentList != null) println(JSONUtils.toJSONString(studentList))
     // delete操作
     HBaseConnector.deleteRows(this.tableName, Seq("1"))
